@@ -1,0 +1,572 @@
+---
+title: "Legacies of Slavery and Lynching on Contemporary Capital Punishment"
+output: 
+  flexdashboard::flex_dashboard:
+   orientation: columns
+   vertical_layout: fill
+   theme: united
+---
+
+<style>
+.colored {
+  background-color: #e4e2d8;
+}
+</style>
+
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(crosstalk)
+library(flexdashboard)
+library(plotly)
+library(leaflet)
+library(numform)
+library(USAboundaries)
+library(gridExtra)
+library(ggmap)
+library(DT)
+library(knitr)
+library(tigris)
+library(devtools)
+library(rappdirs)
+library(leaflet)
+library(htmlwidgets)
+library(sp)
+library(dplyr)
+library(rgeos)
+library(rgdal)
+library(maptools)
+library(sf)
+library(spdep)
+library(mapview)
+library(USAboundariesData)
+library(jsonlite)
+library(tm)
+library(rgdal)
+
+```
+
+
+Lynching and County-Level Slavery {data-icon="fa-map"}
+===========================================================
+
+```{r include=FALSE}
+
+slave <- read.csv("https://davidrigbysociology.s3.amazonaws.com/lynching_data/1860_slave_pop.csv", stringsAsFactors=F)
+slave$fips <- sprintf("%05d", slave$fips)
+slave$stot <- as.numeric(slave$stot)
+slave$slave_prop <- as.numeric(slave$slave_prop)
+dot_data <- read.csv("https://davidrigbysociology.s3.amazonaws.com/lynching_data/make_dot_map_with_this_03.csv", colClasses='character', stringsAsFactors=F)
+datatable(head(dot_data))
+sapply(dot_data,class)
+dot_data$verified <- as.numeric(dot_data$verified)
+dot_data$verified <-replace_na(dot_data$verified)
+
+
+
+black_dot_data <- subset(dot_data, race_count == "Black")
+
+options(tigris_use_cache = TRUE)
+
+
+us_county_shape <- counties(state = NULL, cb = TRUE, year = NULL)
+cds <- coordinates(as(us_county_shape,"Spatial"))
+dot_coords <- cbind(as.data.frame(cds) %>% setNames(c("long","lat")),us_county_shape['GEOID'])
+county_merge <- sp::merge(dot_coords,us_county_shape, by = "GEOID")
+dot_merged <- sp::merge(county_merge, black_dot_data, by = "GEOID", duplicateGeoms = TRUE)
+
+color_race <- c("Black" = "#D4820F")
+
+lynchings <- dplyr::filter(dot_merged, verified==1)
+#lynchings <- left_join(lynchings,us_county_small,by = "GEOID")
+lynchings$colors <- color_race[lynchings$race_count]
+lynchings$long_jit <- jitter(lynchings$long, factor = 80)
+lynchings$lat_jit <- jitter(lynchings$lat, factor = 80)
+
+slave_shape <- us_counties(map_date = "1860-12-30",
+                           resolution = "high")
+
+slave_merge <- sp::merge(slave_shape, slave, by = "fips", duplicateGeoms = TRUE, all.x=TRUE)
+
+### % Slave Proportion
+cutpoints <- c(0, quantile(slave$slave_prop, 0.20, na.rm=TRUE), quantile(slave$slave_prop, 0.40, na.rm=TRUE), 
+               quantile(slave$slave_prop, 0.60, na.rm=TRUE), quantile(slave$slave_prop, 0.80, na.rm=TRUE),
+               quantile(slave$slave_prop, 0.90, na.rm=TRUE), quantile(slave$slave_prop, 1.0, na.rm=TRUE))
+cutpoints
+
+cat_list <- c("0", 				
+              "0-0.0631", 		
+              "0.06311-0.1666", 	
+              "0.16661-0.3221", 	
+              "0.32211-0.4957", 	
+              "0.49571-0.601", 	
+              "0.6011-0.925")
+cat_list[4]
+
+### ENTER slavebin values into 1860 shape file for old jurisdictions missinf fips
+slave_merge$propbin[slave_merge$full_name == "Horry District" & slave_merge$state_name == "South Carolina"] <- cat_list[4]
+slave_merge$propbin[slave_merge$full_name == "Prince Frederick Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- #cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "St. Mark Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "Georgetown District" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "St. James-Santee Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- #cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "Christ Church Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "St. Philip Parish (superseded" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "St. Andrew Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "St. John-Colleton Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "St. Stephen Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "St. John-Berkeley Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "St. James-Goose Creek Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "St. Thomas / St. Dennis Parishes (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6] 
+slave_merge$propbin[slave_merge$full_name == "St. George-Dorchester Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "St. Bartholomew Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6] 
+slave_merge$propbin[slave_merge$full_name == "St. Helena Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "St. Luke Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "St. Peter Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "St. Paul Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "Prince William Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "Lexington District" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "Orangeburg District" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "Barnwell District" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "Williamsburg District" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "St. David Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "Orange Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "Lancaster District" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "York District" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "Chester District" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "Fairfield District" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "Union District" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "Spartanburg District" & slave_merge$state_name == "South Carolina"] <- cat_list[4]
+slave_merge$propbin[slave_merge$full_name == "Greenville District" & slave_merge$state_name == "South Carolina"] <- cat_list[4]
+slave_merge$propbin[slave_merge$full_name == "Pickens District" & slave_merge$state_name == "South Carolina"] <- cat_list[4]
+slave_merge$propbin[slave_merge$full_name == "Anderson District" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "Laurens District" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "Abbeville District" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "Edgefield District" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "Newberry District" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "Sumter District" & slave_merge$state_name == "South Carolina"] <- cat_list[6]
+slave_merge$propbin[slave_merge$full_name == "Richland District" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+slave_merge$propbin[slave_merge$full_name == "Prince George-Winyaw Parish (superseded)" & slave_merge$state_name == "South Carolina"] <- cat_list[5]
+
+slave_merge$propbin[slave_merge$full_name == "Indian Territory" & slave_merge$state_name == "Oklahoma"] <- cat_list[2]
+slave_merge$propbin[slave_merge$full_name == "GREER" & slave_merge$state_name == "Oklahoma"] <- cat_list[2]
+
+slave_merge$propbin[slave_merge$full_name == "CARROLL (extinct)" & slave_merge$state_name == "Louisiana"] <- cat_list[7]
+
+### Make Map
+
+leaflet(options = leafletOptions(minZoom = 3, maxZoom = 6))
+deteup <- paste0("<B>County: ",lynchings$county, " - </B>", lynchings$vic_detes)
+popup <- paste0("<B>County: ",slave_merge$full_name, " - </B> State: ",slave_merge$state_name)
+binpal <- colorFactor(c("white", "#cecddb", "#9d9bb8", "#6d6994", "#3c3771", "#0a0546"), na.color = "white", domain = slave_merge$propbin)
+dot_map <- leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  addPolygons(data = slave_merge,
+              stroke = TRUE,
+              opacity=.15,
+              color="grey", 
+              fillColor = ~binpal(slave_merge$propbin), # you need to use hex colors
+              fillOpacity = .7, 
+              weight = .5, 
+              smoothFactor = 0.2
+  ) %>%  
+  
+  addPolylines(data = slave_merge,                  
+               stroke = TRUE,
+               weight = .5,
+               color="grey") %>%
+  
+  addCircleMarkers(lng = lynchings$long_jit, lat = lynchings$lat_jit, weight=7, opacity = .1, radius =1.5, 
+                   color=lynchings$colors, stroke = TRUE, fillOpacity = .6, popup = deteup
+  ) %>%
+  
+  addLegend( 
+    colors =  c("white", "#e6e6ec", "#b5b4c7", "#8482a2", "#53507d", "#221d58", "#080438"),
+    #labels = c("0", "1-325", "326-1278", "1279-2868", "2869-6033", "6034-8940", "8941-37290"),
+    labels = c("0", "0.01-0.06", "0.06-0.16", "0.17-0.32", "0.33-0.49", "0.50-0.60", "0.60-0.93"),
+    position = "bottomright", 
+    title = "Proportion Enslaved by County (1860 Census)  <br />  •Each Dot Represents 1 Black Lynching Victim")
+
+dot_map
+
+slave_lynch_dot <- setView(dot_map, lat = 39, lng = -97, zoom = 5)
+
+```
+
+Column
+-----------------
+
+###
+```{r, out.height = "100%"}
+slave_lynch_dot
+```
+
+```{r}
+rm(slave,dot_data,black_dot_data,us_county_shape,county_merge,dot_merged,dot_coords,lynchings,slave_shape,slave_merge)
+```
+
+Lynchings, Slavery, and Contemporary Executions {data-icon="fa-map"}
+===========================================================
+
+```{r include=FALSE}
+analysis <- read.csv("/Users/davidrigby/Dropbox/lynching_death_penalty/ANNALS_Submission/Revision/analysis_revisions/weighted_data_for_analysis_2017.csv")
+
+analysis <- rename(analysis, GEOID_2017 = GEOID)
+
+dpic <- read.csv("/Users/davidrigby/Dropbox/lynching_death_penalty/data/dpic/DPIC Execution Database - U.S. Executions.csv")
+data_ts <- read.csv("https://davidrigbysociology.s3.amazonaws.com/lynching_data/data_for_execution_lynching_map.csv")
+dot_data <- read.csv("https://davidrigbysociology.s3.amazonaws.com/lynching_data/make_dot_map_with_this_03.csv", colClasses='character', stringsAsFactors=F)
+```
+
+
+```{r include=FALSE}
+analysis$County <- analysis$County_2017
+analysis$State <- analysis$State_2017
+
+
+### Merge in Executions by Decennial County and State
+dpic$Year <- as.numeric(sapply(str_split(dpic$Execution.Date, "/"), `[`, 3))
+dpic$County <- removeWords(dpic$County, c(" County"," Parish"))
+### Subset DPIC to only black victims, and to edit county variable for merge with census data
+dpic <- subset(dpic %>%
+               select(Year,State,County,Race, Last.Name, First.Name, Execution.Method,Execution.Date),
+               Race=="Black"|Race=="White" & Year<=2017) %>%
+               mutate(County = gsub("St ","St. ",County),
+                      Execution.Date = gsub("/","-",Execution.Date))
+
+# <b>County: ALLCAPS -</b> First Last. Race. Execution Method (Month-Day-Year) </br> Repeat
+
+dpic <- dpic %>% mutate(County = gsub("City","city",County))
+
+
+dpic$Black_Execution[dpic$Race=="Black"] <- 1
+dpic$Black_Execution[is.na(dpic$Black_Execution)] <- 0
+dpic$White_Execution[dpic$Race=="White"] <- 1
+dpic$White_Execution[is.na(dpic$White_Execution)] <- 0
+
+# Correct County names to avoid missingness after merge with shape file.
+dpic$County[dpic$County=="Dade"              & dpic$State=="Florida"]     <- "Miami-Dade"       
+dpic$County[dpic$County=="Dade"              & dpic$State=="Florida"]     <- "Miami-Dade"       
+dpic$County[dpic$County=="Dade"              & dpic$State=="Florida"]     <- "Miami-Dade"       
+dpic$County[dpic$County=="Dade"              & dpic$State=="Florida"]     <- "Miami-Dade"       
+dpic$County[dpic$County=="Stphens"           & dpic$State=="Oklahoma"]    <- "Stephens"         
+dpic$County[dpic$County=="Stunton city"      & dpic$State=="Virginia"]    <- "Staunton city" 
+dpic$County[dpic$County=="Stunton City"      & dpic$State=="Virginia"]    <- "Staunton city" 
+dpic$County[dpic$County=="Hot Springs"       & dpic$State=="Arkansas"]    <- "Hot Spring"       
+dpic$County[dpic$County=="St Louis City"     & dpic$State=="Missouri"]    <- "St. Louis city"   
+dpic$County[dpic$County=="St Louis"          & dpic$State=="Missouri"]    <- "St. Louis"        
+dpic$County[dpic$County=="St Charles"        & dpic$State=="Missouri"]    <- "St. Charles"      
+dpic$County[dpic$County=="St Clair"          & dpic$State=="Missouri"]    <- "St. Clair"        
+dpic$County[dpic$County=="Richmond City"     & dpic$State=="Virginia"]    <- "Richmond city"    
+dpic$County[dpic$County=="Williamsburg City" & dpic$State=="Virginia"]    <- "Williamsburg city"
+dpic$County[dpic$County=="Baltimore City"    & dpic$State=="Maryland"]    <- "Baltimore city"
+dpic$County[dpic$County=="Chesapeake City"   & dpic$State=="Virginia"]    <- "Chesapeake city"
+dpic$County[dpic$County=="Danville City"     & dpic$State=="Virginia"]    <- "Danville city"
+dpic$County[dpic$County=="Fairfax City"      & dpic$State=="Virginia"]    <- "Fairfax city"
+dpic$County[dpic$County=="James city"        & dpic$State=="Virginia"]    <- "James City"
+dpic$County[dpic$County=="Charles city"      & dpic$State=="Virginia"]    <- "Charles City"
+
+
+dpic$Location <- paste(dpic$County, " County, ", dpic$State)
+
+
+dpic$Vic_Detes <- paste(dpic$First.Name," ",dpic$Last.Name,". ",dpic$Race,". ",dpic$Execution.Method," (", dpic$Execution.Date,")",sep="")
+
+
+# Collapse Execution Data by Decade
+Ex_col <- subset(dpic, Race=="Black" & Year<=2017) %>% group_by(Location) %>%
+  summarize(County = first(County),
+            State =first(State),
+            Black_Execution_Count = sum(Black_Execution),
+            County_Ex_List = paste0(Vic_Detes,collapse = " </br>"))
+
+Ex_col$County_Ex_List[Ex_col$County=="Harris"&Ex_col$State=="Texas"]
+Ex_col$Black_Execution_Count[Ex_col$County=="Harris"&Ex_col$State=="Texas"]
+
+#Column for missingness check after merge with Time-Series
+Ex_col$check <- paste(Ex_col$County, Ex_col$State, '| Black:',Ex_col$Black_Execution_Count)
+
+# Merge DPIC with Time-Series Data Frame
+data_ts <- left_join(analysis, Ex_col, by = c("State","County"), copy = FALSE)
+
+data_ts$Black_Execution_Count[is.na(data_ts$Black_Execution_Count)] <- 0
+
+# Check for Missingness on Executions
+#Column to check missingness
+data_ts$check <- paste(data_ts$County, data_ts$State, '| Black:',
+                       data_ts$Black_Execution_Count)
+# Print Missingness
+#print(missing_black <- 
+#        as.list(Ex_col$check)[which(!as.list(
+#          Ex_col$check) %in% 
+#            as.list(data_ts$check))])
+
+data_ts$GEOID <- paste(sprintf("%02s",data_ts$State_Fips_2017),sprintf("%03s",data_ts$County_Fips_2017),sep="")
+
+# Load Lynching Map data with lynching vic_detes for map popup
+dot_data$verified <- as.numeric(dot_data$verified)
+lynching_info <- subset(dot_data, race_count=="Black") %>%
+                 select(GEOID, vic_detes, verified) 
+
+lynching_info <- lynching_info %>% group_by(GEOID) %>%
+                 mutate(Black_Lynching_Count = sum(verified),
+                        County_Lynch_List    = paste0(vic_detes,collapse = " </br>")) %>%
+                 select(-c(verified,vic_detes))
+
+
+lynching_info <- lynching_info[!duplicated(lynching_info$GEOID),]
+
+          mapdata <- left_join(data_ts, lynching_info, by = "GEOID", copy = FALSE)
+          mapdata$Black_Lynching_Count[is.na(mapdata$Black_Lynching_Count)]<-0
+
+          mapdata$Weighted_EnslavedCount_1860 <- as.numeric(mapdata$Weighted_EnslavedCount_1860)
+          mapdata$Weighted_EnslavedCount_1860 [is.na(mapdata$Weighted_EnslavedCount_1860)] <- 0
+
+          mapdata$Weighted_TotPop_1860 <- as.numeric(mapdata$Weighted_TotPop_1860)
+          mapdata$Weighted_TotPop_1860[is.na(mapdata$Weighted_TotPop_1860)] <- 0
+          
+          mapdata$State_Fips_2017 <- sprintf("%02s",data_ts$State_Fips_2017)
+          mapdata$slave_state = 0
+          mapdata$slave_state[mapdata$State_Fips_2017=="48"|mapdata$State_Fips_2017=="22"|mapdata$State_Fips_2017=="01"|
+                                mapdata$State_Fips_2017=="28"|mapdata$State_Fips_2017=="29"|mapdata$State_Fips_2017=="05"|
+                                mapdata$State_Fips_2017=="40"|mapdata$State_Fips_2017=="13"|mapdata$State_Fips_2017=="12"|
+                                mapdata$State_Fips_2017=="45"|mapdata$State_Fips_2017=="37"|mapdata$State_Fips_2017=="51"|
+                                mapdata$State_Fips_2017=="54"|mapdata$State_Fips_2017=="10"|mapdata$State_Fips_2017=="24"|
+                                mapdata$State_Fips_2017=="47"|mapdata$State_Fips_2017=="21"] <- 1
+          
+          
+          mapdata$slave_prop <- mapdata$Weighted_EnslavedCount_1860/mapdata$Weighted_TotPop_1860
+          
+          mapdata$slave_prop[mapdata$State_2017=="New Jersey"|mapdata$State_2017=="Kansas"|mapdata$State_2017=="Nebraska"|
+                             mapdata$State_2017=="Pennsylvania"|mapdata$State_2017=="New York"|mapdata$State_2017=="New Mexico"|
+                             mapdata$State_2017=="Illinois"] <- 0
+          
+          mapdata$slave_prop[mapdata$State_2017=="Maryland" & mapdata$County_2017=="Prince Georges"]
+          mapdata$slave_prop[mapdata$State_2017=="Maryland" & mapdata$County_2017=="Washington"]        <- 0.04567591
+          mapdata$slave_prop[mapdata$State_2017=="Maryland" & mapdata$County_2017=="Montgomery"]        <- 0.2958738
+          mapdata$slave_prop[mapdata$State_2017=="Maryland" & mapdata$County_2017=="Montgomery"]        <- 0.2958738
+          mapdata$slave_prop[mapdata$State_2017=="Maryland" & mapdata$County_2017=="Prince George's"]   <- 0.5349595
+          mapdata$slave_prop[mapdata$State_2017=="Maryland" & mapdata$County_2017=="Washington"]        <- 0.04567591
+          mapdata$slave_prop[mapdata$State_2017=="Texas"    & mapdata$County_2017=="Jack"]              <- 0.05
+          mapdata$slave_prop[mapdata$State_2017=="Texas"    & mapdata$County_2017=="Montague"]          <- 0.04122497
+          mapdata$slave_prop[mapdata$State_2017=="Texas"    & mapdata$County_2017=="Cooke"]             <- 0.0981383
+          mapdata$slave_prop[mapdata$State_2017=="Texas"    & mapdata$County_2017=="Grayson"]           <- 0.157869
+          mapdata$slave_prop[mapdata$State_2017=="Texas"    & mapdata$County_2017=="Fannin"]            <- 0.1867202
+          mapdata$slave_prop[mapdata$State_2017=="Texas"    & mapdata$County_2017=="Lamar"]             <- 0.2794988
+          mapdata$slave_prop[mapdata$State_2017=="Texas"    & mapdata$County_2017=="Red River"]         <- 0.3560633
+          mapdata$slave_prop[mapdata$State_2017=="Texas"    & mapdata$County_2017=="Bowie"]             <- 0.5247427
+          mapdata$slave_prop[mapdata$State_2017=="Arkansas" & mapdata$County_2017=="Sevier"]            <- 0.3200837
+          mapdata$slave_prop[mapdata$State_2017=="Arkansas" & mapdata$County_2017=="Polk"]              <- 0.04035664
+          mapdata$slave_prop[mapdata$State_2017=="Arkansas" & mapdata$County_2017=="Scott"]             <- 0.04178814
+          mapdata$slave_prop[mapdata$State_2017=="Arkansas" & mapdata$County_2017=="Sebastian"]         <- 0.07360901
+          mapdata$slave_prop[mapdata$State_2017=="Arkansas" & mapdata$County_2017=="Crawford"]          <- 0.1092994
+          mapdata$slave_prop[mapdata$State_2017=="Arkansas" & mapdata$County_2017=="Washington"]        <- 0.1017515
+          mapdata$slave_prop[mapdata$State_2017=="Arkansas" & mapdata$County_2017=="Benton"]            <- 0.0412637
+          mapdata$slave_prop[mapdata$State_2017=="Arkansas" & mapdata$County_2017=="Little River"]      <-  0.3200837
+          mapdata$slave_prop[mapdata$State_2017=="Missouri" & mapdata$County_2017=="McDonald"]          <- 0.01783061
+          mapdata$slave_prop[mapdata$State_2017=="Missouri" & mapdata$County_2017=="Newton"]            <- 0.04571306
+          
+          
+          
+          cutpoints <- c(0, quantile(mapdata$slave_prop, 0.20, na.rm=TRUE), quantile(mapdata$slave_prop, 0.40, na.rm=TRUE), 
+                            quantile(mapdata$slave_prop, 0.60, na.rm=TRUE), quantile(mapdata$slave_prop, 0.80, na.rm=TRUE),
+                            quantile(mapdata$slave_prop, 0.90, na.rm=TRUE), quantile(mapdata$slave_prop, 1.0, na.rm=TRUE))
+
+          cat_list <- c("0", 				
+                        "0-0.0631", 		
+                        "0.06311-0.1666", 	
+                        "0.16661-0.3221", 	
+                        "0.32211-0.4957", 	
+                        "0.49571-0.601", 	
+                        "0.6011-0.925")
+          
+
+          mapdata$propbin <- "0"
+          mapdata$propbin[mapdata$slave_prop > 0      & mapdata$slave_prop <= 0.0631] <- cat_list[2]
+          mapdata$propbin[mapdata$slave_prop > 0.0631 & mapdata$slave_prop <= 0.1666] <- cat_list[3]
+          mapdata$propbin[mapdata$slave_prop > 0.1666 & mapdata$slave_prop <= 0.3221] <- cat_list[4]
+          mapdata$propbin[mapdata$slave_prop > 0.3221 & mapdata$slave_prop <= 0.4957] <- cat_list[5]
+          mapdata$propbin[mapdata$slave_prop > 0.4957 & mapdata$slave_prop <= 0.601] <- cat_list[6]
+          mapdata$propbin[mapdata$slave_prop > 0.6011 & mapdata$slave_prop <= 0.925] <- cat_list[7]
+          mapdata$propbin[mapdata$County_2017=="Little River" & mapdata$State_2017=="Arkansas"]
+
+          
+          mapdata$propbin[mapdata$State_2017 == "Oklahoma"] <- cat_list[2]
+          
+          mapdata$propbin[mapdata$State_2017 == "Oklahoma"]
+          
+          ### Colorcode Lynchings and Executions
+          color_lynch <- c('0' = 'none', '1'= "#D4820F")
+          color_execution <- c('0' = 'none', '1' = "#8b0000")
+          
+          mapdata$execution_colorcode <- 0
+
+          mapdata$execution_colorcode[mapdata$Black_Execution_Count >= 1] <- "#8b0000"
+          mapdata$execution_colorcode[mapdata$Black_Execution_Count < 1] <- "none"
+
+          mapdata$lynching_colorcode <- 'none'
+
+          mapdata$lynching_colorcode[mapdata$Black_Lynching_Count >= 1] <- "#D4820F"
+          
+          sl <- unique(mapdata$State_Fips_2017[mapdata$State_Fips_2017!="72"])
+          invisible(capture.output(us_county_shape <- counties(sl, cb = TRUE, year = NULL)))
+          cds <- coordinates(as(us_county_shape,"Spatial"))
+          dot_coords <- cbind(as.data.frame(cds) %>% setNames(c("long","lat")),us_county_shape["GEOID"])
+          mapdata <- sp::merge(dot_coords,mapdata, by = "GEOID")
+          mapdata <- merge(us_county_shape,mapdata, duplicateGeoms = TRUE)
+
+          mapdata$Black_Lynching_Count[is.na(mapdata$Black_Lynching_Count)] <- 0
+
+          ### Coordinates for CircleMarkers
+  
+          mapdata$slave_prop[is.na(mapdata$slave_prop)] <- 0
+  
+          mapdata$long_lynch <- jitter(mapdata$long, factor = 50)
+          mapdata$lat_lynch <- jitter(mapdata$lat, factor = 50)
+          mapdata$long_ex <- jitter(mapdata$long, factor = 50)
+          mapdata$lat_ex <- jitter(mapdata$lat, factor = 50)
+          
+          mapdata$County_Lynch_List[mapdata$County=="Duluth" & mapdata$State=="Minnesota"]
+          
+          
+         mapdata$execution_colorcode[mapdata$Black_Execution_Count >= 1] <- "#263973"
+         mapdata$execution_colorcode[mapdata$Black_Execution_Count < 1] <- "none"
+         mapdata$lynching_colorcode[mapdata$Black_Lynching_Count >= 1] <- "#993333"
+         mapdata$lynching_colorcode[mapdata$Black_Lynching_Count < 1] <- "none"
+         mapdata$execution_stroke[mapdata$Black_Execution_Count >= 1] <- "black"
+         mapdata$execution_stroke[mapdata$Black_Execution_Count < 1] <- "none"
+         mapdata$lynching_stroke[mapdata$Black_Lynching_Count >= 1] <- "#969696"
+         mapdata$lynching_stroke[mapdata$Black_Lynching_Count < 1] <- "none"
+               
+               
+
+```
+
+
+```{r}
+# Greyscale
+          
+colors <- c("none", "#993333", "#993333", "#993333","none","#263973","#263973","#263973")
+            labels <- c("<B>Lynching</B>", "1", "10", "33", "<B>Execution</B>", "1", "20", "68")
+            sizes <- c(0, 9, 30, 40, 0, 9, 35, 46)
+            shapes <- c("circle", "circle","circle","circle","circle","circle","circle","circle")
+            borders <- c("none","#969696","#969696","#969696","none","black","black", "black")
+            
+          
+          addLegendCustom <- function(map, position,colors, labels, sizes, shapes, borders, opacity = .6){
+            
+            make_shapes <- function(colors, sizes, borders, shapes) {
+              shapes <- gsub("circle", "50%", shapes)
+              paste0(colors, "; width:", sizes, "px; height:", sizes, "px; border:2px solid ", borders, "; border-radius:", shapes)
+            }
+            make_labels <- function(sizes, labels) {
+              paste0("<div style='display: inline;height:", 
+                     sizes, "px;margin-top: 4px;line-height: ", 
+                     sizes, "px;'>", labels, "</div>")
+            }
+            
+            legend_colors <- make_shapes(colors, sizes, borders, shapes)
+            legend_labels <- make_labels(sizes, labels)
+
+            return(addLegend(map, position, colors = legend_colors, labels = legend_labels, opacity = opacity))
+          }
+               ### MAKE MAP
+               lynchup <- paste0("<B>Lynchings in ",mapdata$County, ", ", mapdata$State,"</B> </br>", mapdata$County_Lynch_List)
+               exup    <- paste0("<B>Executions in ",mapdata$County, ", ", mapdata$State,"</B> </br>", mapdata$County_Ex_List)
+               popup   <- paste0("<B> County: ",mapdata$County_1990, ", ", mapdata$State_2017, ":</br>",
+                                 "Prop. Enslaved 1860: ", round(mapdata$slave_prop, digits=3))
+               binpal <- colorFactor(c("white", "#d9d9d9", "#8f8f8f", "#bdbdbd", "#969696", "#636363","#252525"), na.color = "white", domain = mapdata$propbin)
+               
+               dot_map <- leaflet(height = "100%",mapdata) %>%
+                 addProviderTiles("CartoDB.Positron") %>%
+                 addPolygons(data = mapdata,
+                             stroke = TRUE,
+                             opacity=.15,
+                             color="grey", 
+                             fillColor = ~binpal(mapdata$propbin), # you need to use hex colors
+                             fillOpacity = .7, 
+                             weight = .5, 
+                             smoothFactor = 0.2,
+                             popup = popup,               
+                             highlightOptions = highlightOptions(color = "black", weight = 1, opacity = 2,
+                                                                 bringToFront = TRUE)) %>%
+                 
+                 addPolylines(data = mapdata,                  
+                              stroke = TRUE,
+                              weight = .5,
+                              color="grey") %>%
+                 
+                 addCircleMarkers(lng = mapdata$long_lynch, lat = mapdata$lat_lynch,
+                                  radius = ~ 5*log(1+(1.5*Black_Lynching_Count)), weight=1, opacity = .8,
+                                  color=~mapdata$lynching_stroke, fillColor = ~mapdata$lynching_colorcode,
+                                  stroke = TRUE, fillOpacity = 0.2, popup = lynchup,
+                                  markerOptions(riseOnHover = TRUE,riseOffset = 250)) %>%
+                 
+                 addCircleMarkers(lng = mapdata$long_ex, lat = mapdata$lat_ex, 
+                                  radius = ~ 5*log(1+(1.5*Black_Execution_Count)), weight=1, opacity = .8,
+                                  color= mapdata$execution_stroke, fillColor = mapdata$execution_colorcode,
+                                  stroke = TRUE, fillOpacity = 0.2, popup = exup,
+                                  markerOptions(riseOnHover = TRUE,riseOffset = 250)) %>%
+                 
+                 addLegend( 
+                   colors =  c("white", "#d9d9d9", "#8f8f8f", "#bdbdbd", "#969696", "#636363","#252525"),
+                   labels = c("0", "0.01-0.06", "0.06-0.16", "0.17-0.32", "0.33-0.49", "0.50-0.60", "0.60-0.93"),
+                   position = "bottomright", 
+                   title = "Proportion Enslaved by County (1860 Census)") %>%
+                 
+                 addLegendCustom(colors, position = "bottomleft",labels, sizes, shapes, borders)
+               
+               centered_grey <- setView(dot_map,lat = 39, lng = -97, zoom = 5)
+```
+
+Column
+-----------------
+
+###
+```{r, out.height = "100%"}
+centered_grey
+```
+
+```{r}
+rm(analysis,dpic,data_ts,dot_data,Ex_col,lynching_info,mapdata,us_county_shape,dot_coords)
+```
+
+
+<!-- <style> -->
+<!-- .dashboard { -->
+<!--   position: fixed; -->
+<!--   left: 0; -->
+<!--   top: 50px; -->
+<!--   bottom: 0; -->
+<!--   right: 0; -->
+<!-- } -->
+<!-- .dashboard iframe { -->
+<!--   width: 100%; -->
+<!--   height: 100%; -->
+<!--   border: none; -->
+<!-- } -->
+<!-- </style> -->
+
+<!-- <div class="dashboard"> -->
+<!-- <iframe src="https://bit.ly/2NkemxQ"> -->
+<!-- </iframe> -->
+<!-- </div> -->
+
+<!-- <style> -->
+<!-- .dashboard { -->
+<!--   position: fixed; -->
+<!--   left: 0; -->
+<!--   top: 50px; -->
+<!--   bottom: 0; -->
+<!--   right: 0; -->
+<!-- } -->
+<!-- .dashboard iframe { -->
+<!--   width: 100%; -->
+<!--   height: 100%; -->
+<!--   border: none; -->
+<!-- } -->
+<!-- </style> -->
+
+<!-- <div class="dashboard"> -->
+<!-- <iframe src="https://bit.ly/2NkemxQ"> -->
+<!-- </iframe> -->
+<!-- </div> -->
